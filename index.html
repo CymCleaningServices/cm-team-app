@@ -539,7 +539,7 @@ function startListeners() {
   // Jobs
   db.ref('jobs').on('value', snap => {
     const data = snap.val() || {};
-    liveJobs = Object.values(data);
+    liveJobs = Object.entries(data).map(([key, val]) => ({...val, id: key}));
     renderDashboard();
     renderCalendar();
     renderChecklist();
@@ -548,16 +548,17 @@ function startListeners() {
   // Members
   db.ref('members').on('value', snap => {
     const data = snap.val() || {};
-    liveMembers = Object.values(data);
+    liveMembers = Object.entries(data).map(([key, val]) => ({...val, id: key}));
     renderTeamPage();
   });
 
   // Time logs
   db.ref('timeLogs').on('value', snap => {
     const data = snap.val() || {};
-    liveTimeLogs = Object.values(data);
+    // Preserve Firebase key as id inside each object
+    liveTimeLogs = Object.entries(data).map(([key, val]) => ({...val, id: key}));
     renderTimeLog();
-    if(isAdmin) renderAllLogs();
+    if(isAdmin) { renderAllLogs(); renderWeeklyHours(); }
   });
 
   setSyncStatus(true);
@@ -595,7 +596,9 @@ function removeMember(id) {
   return db.ref('members/' + id).remove();
 }
 function saveTimeLog(log) {
-  return db.ref('timeLogs/' + log.id).set(log);
+  // Use id as Firebase key AND store id inside object
+  const logToSave = {...log, id: log.id};
+  return db.ref('timeLogs/' + log.id).set(logToSave);
 }
 function removeTimeLog(id) {
   return db.ref('timeLogs/' + id).remove();
@@ -724,8 +727,9 @@ function toggleClock() {
     const inTime24 = `${String(clockInTime.getHours()).padStart(2,'0')}:${String(clockInTime.getMinutes()).padStart(2,'0')}`;
     const outTime24 = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
+    const logId = 'clk_' + Date.now();
     const log = {
-      id: 'clk_' + Date.now(),
+      id: logId,
       date: now.toISOString().split('T')[0],
       name: currentEmployeeName,
       employeeId: currentEmployeeId || null,
@@ -825,6 +829,7 @@ function renderAllLogs() {
       ${entries.map(l=>{
         const member = getMembers().find(m=>m.name===l.name);
         const photo = member&&member.photo?`<img src="${member.photo}" style="width:100%;height:100%;object-fit:cover;">` : '👤';
+        const safeId = encodeURIComponent(String(l.id||''));
         return `<div style="background:white;border-radius:12px;padding:10px 12px;margin-bottom:6px;
           border:1px solid var(--border);border-left:3px solid var(--navy);">
           <div style="display:flex;align-items:center;gap:10px;">
@@ -842,12 +847,12 @@ function renderAllLogs() {
               <div style="background:var(--navy);color:white;padding:3px 10px;border-radius:20px;
                 font-size:0.72rem;font-weight:700;">${l.duration||'—'}</div>
               <div style="display:flex;gap:4px;">
-                <button onclick="openEditTime('${l.id}')"
+                <button data-logid="${safeId}" class="edit-time-btn"
                   style="background:var(--light);color:var(--navy);border:1px solid var(--border);
                   border-radius:8px;padding:4px 10px;font-size:0.72rem;cursor:pointer;font-weight:600;">
                   ✏️ Edit
                 </button>
-                <button onclick="deleteTimeEntry('${l.id}')"
+                <button data-logid="${safeId}" class="del-time-btn"
                   style="background:var(--light);color:var(--red);border:1px solid var(--border);
                   border-radius:8px;padding:4px 8px;font-size:0.72rem;cursor:pointer;">
                   🗑
@@ -858,10 +863,25 @@ function renderAllLogs() {
         </div>`;
       }).join('')}
     </div>`).join('');
+
+  // Event delegation — safe for any Firebase key format
+  container.querySelectorAll('.edit-time-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = decodeURIComponent(btn.getAttribute('data-logid'));
+      openEditTime(id);
+    });
+  });
+  container.querySelectorAll('.del-time-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = decodeURIComponent(btn.getAttribute('data-logid'));
+      if(confirm('Delete this time entry?')) deleteTimeEntry(id);
+    });
+  });
 }
 
 function openEditTime(logId) {
-  const log = getTimeLogs().find(l=>String(l.id)===String(logId));
+  const realLogId = decodeURIComponent(String(logId));
+  const log = getTimeLogs().find(l=>String(l.id)===String(realLogId));
   if(!log){ showToast('❌ Entry not found'); return; }
   const members = getMembers();
   const memberOptions = ['Manager', ...members.map(m=>m.name)]
@@ -894,8 +914,8 @@ function openEditTime(logId) {
       Duration will be calculated automatically
     </div>
     <div style="display:flex;gap:8px;">
-      <button class="modal-btn green" onclick="saveEditTime('${logId}')">✅ Save Changes</button>
-      <button class="modal-btn red" onclick="if(confirm('Delete this entry?'))deleteTimeEntry('${logId}')">🗑 Delete</button>
+      <button class="modal-btn green" onclick="saveEditTime('${encodeURIComponent(String(realLogId))}')">✅ Save Changes</button>
+      <button class="modal-btn red" onclick="if(confirm('Delete this entry?'))deleteTimeEntry('${encodeURIComponent(String(realLogId))}')">🗑 Delete</button>
       <button class="modal-btn gray" onclick="closeTimeModal()">Cancel</button>
     </div>`;
 
@@ -968,39 +988,84 @@ function showAddTimeModal() {
 }
 
 function saveEditTime(logId) {
-  const inVal = document.getElementById('editLogIn').value;
-  const outVal = document.getElementById('editLogOut').value;
+  const inEl = document.getElementById('editLogIn');
+  const outEl = document.getElementById('editLogOut');
+  const nameEl = document.getElementById('editLogName');
+  const dateEl = document.getElementById('editLogDate');
+
+  if(!inEl||!nameEl||!dateEl){ showToast('❌ Form not ready'); return; }
+
+  const inVal = inEl.value;
+  const outVal = outEl ? outEl.value : '';
+  const nameVal = nameEl.value.trim();
+  const dateVal = dateEl.value;
+
   if(!inVal){ showToast('❌ Clock in time required'); return; }
-  const updates = {
-    date: document.getElementById('editLogDate').value,
-    name: document.getElementById('editLogName').value.trim(),
-    inTime: input24ToDisplay(inVal), inTime24: inVal,
-    outTime: outVal ? input24ToDisplay(outVal) : '—', outTime24: outVal,
-    duration: outVal ? calcDuration(inVal,outVal) : '—'
+  if(!dateVal){ showToast('❌ Date is required'); return; }
+  if(!nameVal){ showToast('❌ Employee name required'); return; }
+
+  // Decode in case it was encoded
+  const realId = decodeURIComponent(String(logId));
+
+  const updatedLog = {
+    id: realId,
+    date: dateVal,
+    name: nameVal,
+    inTime: input24ToDisplay(inVal),
+    inTime24: inVal,
+    outTime: outVal ? input24ToDisplay(outVal) : '—',
+    outTime24: outVal || '',
+    duration: outVal ? calcDuration(inVal, outVal) : '—',
   };
-  updateTimeLog(logId, updates).then(()=>{ closeTimeModal(); showToast('✅ Updated!','green'); });
+
+  db.ref('timeLogs/' + realId).set(updatedLog)
+    .then(() => {
+      closeTimeModal();
+      renderWeeklyHours();
+      showToast('✅ Time updated!', 'green');
+    })
+    .catch(err => {
+      showToast('❌ Failed — check connection');
+      console.error(err);
+    });
 }
 
 function saveAddTime() {
   const inVal = document.getElementById('editLogIn').value;
   const outVal = document.getElementById('editLogOut').value;
   const dateVal = document.getElementById('editLogDate').value;
-  if(!inVal||!dateVal){ showToast('❌ Date and clock in required'); return; }
+  const nameVal = document.getElementById('editLogName').value;
+  if(!inVal||!dateVal){ showToast('❌ Date and clock in time required'); return; }
+
+  const logId = 'manual_' + Date.now();
   const log = {
-    id: 'manual_'+Date.now(),
+    id: logId,
     date: dateVal,
-    name: document.getElementById('editLogName').value,
+    name: nameVal,
     employeeId: null,
-    inTime: input24ToDisplay(inVal), inTime24: inVal,
-    outTime: outVal ? input24ToDisplay(outVal) : '—', outTime24: outVal,
-    duration: outVal ? calcDuration(inVal,outVal) : '—'
+    inTime: input24ToDisplay(inVal),
+    inTime24: inVal,
+    outTime: outVal ? input24ToDisplay(outVal) : '—',
+    outTime24: outVal || '',
+    duration: outVal ? calcDuration(inVal, outVal) : '—'
   };
-  saveTimeLog(log).then(()=>{ closeTimeModal(); showToast('✅ Entry added!','green'); });
+
+  db.ref('timeLogs/' + logId).set(log)
+    .then(() => {
+      closeTimeModal();
+      showToast('✅ Entry added!', 'green');
+    })
+    .catch(err => showToast('❌ Failed to add — check connection'));
 }
 
 function deleteTimeEntry(logId) {
   if(!confirm('Delete this time entry?')) return;
-  removeTimeLog(logId).then(()=>showToast('🗑 Deleted'));
+  db.ref('timeLogs/' + logId).remove()
+    .then(() => {
+      closeTimeModal();
+      showToast('🗑 Entry deleted');
+    })
+    .catch(err => showToast('❌ Delete failed — check connection'));
 }
 
 function closeTimeModal() {
