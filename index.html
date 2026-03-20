@@ -814,38 +814,116 @@ function renderAllLogs() {
 
   container.innerHTML = Object.entries(grouped).map(([date,entries])=>`
     <div style="margin-bottom:1rem;">
-      <div style="font-size:0.75rem;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:0.08em;padding:6px 10px;background:var(--light);border-radius:8px;margin-bottom:6px;">📅 ${formatDate(date)}</div>
-      ${entries.map(l=>`
-        <div style="background:white;border-radius:12px;padding:10px 12px;margin-bottom:6px;border:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <div style="flex:1;">
-            <div style="font-weight:600;font-size:0.88rem;color:var(--navy);">👤 ${l.name}</div>
-            <div style="font-size:0.75rem;color:var(--gray);margin-top:2px;">In: <strong>${l.inTime}</strong> → Out: <strong>${l.outTime||'—'}</strong></div>
+      <div style="font-size:0.75rem;font-weight:700;color:var(--navy);text-transform:uppercase;
+        letter-spacing:0.08em;padding:6px 10px;background:var(--light);border-radius:8px;
+        margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+        <span>📅 ${formatDate(date)}</span>
+        <span style="color:var(--gray);font-weight:400;text-transform:none;letter-spacing:0;">
+          ${entries.length} entr${entries.length===1?'y':'ies'}
+        </span>
+      </div>
+      ${entries.map(l=>{
+        const member = getMembers().find(m=>m.name===l.name);
+        const photo = member&&member.photo?`<img src="${member.photo}" style="width:100%;height:100%;object-fit:cover;">` : '👤';
+        return `<div style="background:white;border-radius:12px;padding:10px 12px;margin-bottom:6px;
+          border:1px solid var(--border);border-left:3px solid var(--navy);">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:36px;height:36px;border-radius:50%;overflow:hidden;flex-shrink:0;
+              background:var(--light);display:flex;align-items:center;justify-content:center;font-size:1rem;">
+              ${photo}
+            </div>
+            <div style="flex:1;">
+              <div style="font-weight:700;font-size:0.88rem;color:var(--navy);">${l.name}</div>
+              <div style="font-size:0.75rem;color:var(--gray);margin-top:1px;">
+                🕐 In: <strong>${l.inTime}</strong> &nbsp;→&nbsp; Out: <strong>${l.outTime||'Not clocked out'}</strong>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+              <div style="background:var(--navy);color:white;padding:3px 10px;border-radius:20px;
+                font-size:0.72rem;font-weight:700;">${l.duration||'—'}</div>
+              <div style="display:flex;gap:4px;">
+                <button onclick="openEditTime('${l.id}')"
+                  style="background:var(--light);color:var(--navy);border:1px solid var(--border);
+                  border-radius:8px;padding:4px 10px;font-size:0.72rem;cursor:pointer;font-weight:600;">
+                  ✏️ Edit
+                </button>
+                <button onclick="deleteTimeEntry('${l.id}')"
+                  style="background:var(--light);color:var(--red);border:1px solid var(--border);
+                  border-radius:8px;padding:4px 8px;font-size:0.72rem;cursor:pointer;">
+                  🗑
+                </button>
+              </div>
+            </div>
           </div>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <div style="background:var(--light);padding:4px 10px;border-radius:20px;font-size:0.72rem;font-weight:700;color:var(--navy);">${l.duration||'—'}</div>
-            <button onclick="openEditTime('${l.id}')" style="background:var(--navy);color:white;border:none;border-radius:8px;padding:5px 10px;font-size:0.75rem;cursor:pointer;">✏️</button>
-            <button onclick="deleteTimeEntry('${l.id}')" style="background:var(--red);color:white;border:none;border-radius:8px;padding:5px 10px;font-size:0.75rem;cursor:pointer;">🗑</button>
-          </div>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
     </div>`).join('');
 }
 
 function openEditTime(logId) {
   const log = getTimeLogs().find(l=>String(l.id)===String(logId));
   if(!log){ showToast('❌ Entry not found'); return; }
-  document.getElementById('timeEditTitle').textContent = `✏️ Edit — ${log.name}`;
+  const members = getMembers();
+  const memberOptions = ['Manager', ...members.map(m=>m.name)]
+    .map(n=>`<option value="${n}" ${log.name===n?'selected':''}>${n}</option>`).join('');
+
+  document.getElementById('timeEditTitle').textContent = '✏️ Edit Time Entry';
   document.getElementById('timeEditBody').innerHTML = `
-    <div class="form-group"><label class="form-label">Date</label><input class="form-input" type="date" id="editLogDate" value="${log.date}"></div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Clock In</label><input class="form-input" type="time" id="editLogIn" value="${log.inTime24||timeToInput(log.inTime)}"></div>
-      <div class="form-group"><label class="form-label">Clock Out</label><input class="form-input" type="time" id="editLogOut" value="${log.outTime24||timeToInput(log.outTime)}"></div>
+    <div style="background:var(--light);border-radius:12px;padding:10px 14px;margin-bottom:1rem;font-size:0.82rem;color:var(--gray);">
+      Editing entry for <strong style="color:var(--navy);">${log.name}</strong> on <strong style="color:var(--navy);">${formatDate(log.date)}</strong>
     </div>
-    <div class="form-group"><label class="form-label">Employee Name</label><input class="form-input" type="text" id="editLogName" value="${log.name}"></div>
-    <div style="display:flex;gap:8px;margin-top:0.5rem;">
-      <button class="modal-btn green" onclick="saveEditTime('${logId}')">✅ Save</button>
+    <div class="form-group">
+      <label class="form-label">Employee</label>
+      <select class="form-select" id="editLogName">${memberOptions}</select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Date</label>
+      <input class="form-input" type="date" id="editLogDate" value="${log.date}">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Clock In Time</label>
+        <input class="form-input" type="time" id="editLogIn" value="${log.inTime24||timeToInput(log.inTime)}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Clock Out Time</label>
+        <input class="form-input" type="time" id="editLogOut" value="${log.outTime24||timeToInput(log.outTime)}">
+      </div>
+    </div>
+    <div id="editDurationPreview" style="background:var(--light);border-radius:10px;padding:8px 12px;font-size:0.82rem;color:var(--gray);margin-bottom:1rem;text-align:center;">
+      Duration will be calculated automatically
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="modal-btn green" onclick="saveEditTime('${logId}')">✅ Save Changes</button>
+      <button class="modal-btn red" onclick="if(confirm('Delete this entry?'))deleteTimeEntry('${logId}')">🗑 Delete</button>
       <button class="modal-btn gray" onclick="closeTimeModal()">Cancel</button>
     </div>`;
+
+  // Live duration preview
+  ['editLogIn','editLogOut'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('change', updateDurationPreview);
+  });
+  updateDurationPreview();
   document.getElementById('timeEditModal').classList.add('open');
+}
+
+function updateDurationPreview(){
+  const inVal = document.getElementById('editLogIn') ? document.getElementById('editLogIn').value : '';
+  const outVal = document.getElementById('editLogOut') ? document.getElementById('editLogOut').value : '';
+  const preview = document.getElementById('editDurationPreview');
+  if(!preview) return;
+  if(inVal && outVal){
+    const dur = calcDuration(inVal, outVal);
+    preview.innerHTML = `⏱ Duration: <strong style="color:var(--navy);">${dur}</strong>`;
+    preview.style.borderLeft = '3px solid var(--green)';
+  } else if(inVal){
+    preview.innerHTML = `🕐 Clocked in at <strong>${input24ToDisplay(inVal)}</strong> — no clock out yet`;
+    preview.style.borderLeft = '3px solid var(--orange)';
+  } else {
+    preview.innerHTML = 'Duration will be calculated automatically';
+    preview.style.borderLeft = 'none';
+  }
 }
 
 function showAddTimeModal() {
@@ -853,21 +931,39 @@ function showAddTimeModal() {
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('timeEditTitle').textContent = '➕ Add Time Entry';
   document.getElementById('timeEditBody').innerHTML = `
-    <div class="form-group"><label class="form-label">Employee</label>
+    <div class="form-group">
+      <label class="form-label">Employee *</label>
       <select class="form-select" id="editLogName">
         <option value="Manager">Manager</option>
         ${members.map(m=>`<option value="${m.name}">${m.name}</option>`).join('')}
       </select>
     </div>
-    <div class="form-group"><label class="form-label">Date</label><input class="form-input" type="date" id="editLogDate" value="${today}"></div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Clock In</label><input class="form-input" type="time" id="editLogIn"></div>
-      <div class="form-group"><label class="form-label">Clock Out</label><input class="form-input" type="time" id="editLogOut"></div>
+    <div class="form-group">
+      <label class="form-label">Date *</label>
+      <input class="form-input" type="date" id="editLogDate" value="${today}">
     </div>
-    <div style="display:flex;gap:8px;margin-top:0.5rem;">
-      <button class="modal-btn green" onclick="saveAddTime()">✅ Add</button>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Clock In *</label>
+        <input class="form-input" type="time" id="editLogIn">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Clock Out</label>
+        <input class="form-input" type="time" id="editLogOut">
+      </div>
+    </div>
+    <div id="editDurationPreview" style="background:var(--light);border-radius:10px;padding:8px 12px;font-size:0.82rem;color:var(--gray);margin-bottom:1rem;text-align:center;">
+      Duration will be calculated automatically
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="modal-btn green" onclick="saveAddTime()">✅ Add Entry</button>
       <button class="modal-btn gray" onclick="closeTimeModal()">Cancel</button>
     </div>`;
+
+  ['editLogIn','editLogOut'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('change', updateDurationPreview);
+  });
   document.getElementById('timeEditModal').classList.add('open');
 }
 
