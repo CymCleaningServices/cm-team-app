@@ -1685,7 +1685,8 @@ function renderWeeklyHours() {
   const container = document.getElementById('weeklyHoursContainer');
   if(!container) return;
   const {start,end} = getWeekRange();
-  const logs = getTimeLogs().filter(l=>l.date>=start&&l.date<=end&&l.outTime&&l.outTime!=='—');
+  // Show ALL logs this week, including ones without clock-out
+  const logs = getTimeLogs().filter(l=>l.date>=start&&l.date<=end);
 
   if(!logs.length) {
     container.innerHTML='<p style="color:var(--gray);font-size:0.82rem;text-align:center;padding:1rem;">No time logged this week.</p>';
@@ -1696,9 +1697,8 @@ function renderWeeklyHours() {
   const byEmp = {};
   logs.forEach(l=>{
     const name = l.name||'Unknown';
-    if(!byEmp[name]) byEmp[name] = {logs:[],totalMins:0};
+    if(!byEmp[name]) byEmp[name] = {logs:[], totalMins:0};
     byEmp[name].logs.push(l);
-    // Parse duration
     const dur = l.duration||'';
     const hMatch = dur.match(/(\d+)h/);
     const mMatch = dur.match(/(\d+)m/);
@@ -1707,32 +1707,107 @@ function renderWeeklyHours() {
     byEmp[name].totalMins += h*60+m;
   });
 
-  container.innerHTML = Object.entries(byEmp).sort((a,b)=>b[1].totalMins-a[1].totalMins).map(([name,data])=>{
-    const totalH = Math.floor(data.totalMins/60);
-    const totalM = data.totalMins%60;
-    const totalStr = totalH>0?`${totalH}h ${totalM}m`:`${totalM}m`;
-    const member = getMembers().find(m=>m.name===name);
-    const photo = member&&member.photo?`<img src="${member.photo}" style="width:100%;height:100%;object-fit:cover;">`:'👤';
-    return `
-      <div style="background:white;border-radius:14px;padding:1rem;margin-bottom:0.75rem;box-shadow:var(--shadow);border:1px solid var(--border);">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
-          <div style="width:44px;height:44px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--light);display:flex;align-items:center;justify-content:center;font-size:1.2rem;">${photo}</div>
-          <div style="flex:1;">
-            <div style="font-weight:700;font-size:0.95rem;color:var(--navy);">${name}</div>
-            <div style="font-size:0.75rem;color:var(--gray);">${data.logs.length} shift${data.logs.length!==1?'s':''} this week</div>
+  container.innerHTML = Object.entries(byEmp)
+    .sort((a,b)=>b[1].totalMins-a[1].totalMins)
+    .map(([name,data])=>{
+      const totalH = Math.floor(data.totalMins/60);
+      const totalM = data.totalMins%60;
+      const totalStr = totalH>0?`${totalH}h ${totalM}m`:`${totalM}m`;
+      const member = getMembers().find(m=>m.name===name);
+      const photo = member&&member.photo
+        ?`<img src="${member.photo}" style="width:100%;height:100%;object-fit:cover;">`
+        :'👤';
+
+      return `
+        <div style="background:white;border-radius:16px;margin-bottom:1rem;
+          box-shadow:var(--shadow);border:1px solid var(--border);overflow:hidden;">
+
+          <!-- Employee header -->
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;
+            background:linear-gradient(135deg,var(--navy),#2a52a0);">
+            <div style="width:44px;height:44px;border-radius:50%;overflow:hidden;flex-shrink:0;
+              background:rgba(255,255,255,0.2);display:flex;align-items:center;
+              justify-content:center;font-size:1.2rem;border:2px solid rgba(255,255,255,0.3);">
+              ${photo}
+            </div>
+            <div style="flex:1;">
+              <div style="font-weight:700;font-size:0.95rem;color:white;">${name}</div>
+              <div style="font-size:0.72rem;color:rgba(255,255,255,0.6);">
+                ${data.logs.length} shift${data.logs.length!==1?'s':''} this week
+              </div>
+            </div>
+            <div style="background:var(--accent);color:white;padding:6px 14px;
+              border-radius:20px;font-family:'Syne',sans-serif;font-weight:800;font-size:0.95rem;">
+              ${totalStr}
+            </div>
           </div>
-          <div style="background:var(--navy);color:white;padding:6px 14px;border-radius:20px;font-family:'Syne',sans-serif;font-weight:700;font-size:0.9rem;">${totalStr}</div>
-        </div>
-        <div style="border-top:1px solid var(--light);padding-top:8px;">
-          ${data.logs.map(l=>`
-            <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--gray);padding:3px 0;">
-              <span>${l.date}</span>
-              <span>${l.inTime} → ${l.outTime}</span>
-              <span style="font-weight:600;color:var(--navy);">${l.duration}</span>
-            </div>`).join('')}
-        </div>
-      </div>`;
-  }).join('');
+
+          <!-- Individual shifts with EDIT buttons -->
+          <div style="padding:8px 10px;">
+            ${data.logs
+              .sort((a,b)=>a.date.localeCompare(b.date)||a.inTime.localeCompare(b.inTime))
+              .map(l=>`
+              <div style="display:flex;align-items:center;gap:8px;padding:8px 6px;
+                border-bottom:1px solid var(--light);">
+                <div style="flex:1;">
+                  <div style="font-size:0.75rem;font-weight:700;color:var(--navy);">
+                    📅 ${formatDate(l.date)}
+                  </div>
+                  <div style="font-size:0.78rem;color:var(--gray);margin-top:2px;">
+                    🕐 <strong>${l.inTime}</strong>
+                    &nbsp;→&nbsp;
+                    🕑 <strong style="color:${l.outTime&&l.outTime!=='—'?'var(--navy)':'var(--red)'};">
+                      ${l.outTime&&l.outTime!=='—'?l.outTime:'Not clocked out'}
+                    </strong>
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                  <div style="background:var(--light);padding:4px 10px;border-radius:20px;
+                    font-size:0.72rem;font-weight:700;color:var(--navy);">
+                    ${l.duration&&l.duration!=='—'?l.duration:'In progress'}
+                  </div>
+                  <button
+                    onclick="openEditTime('${l.id}')"
+                    style="background:var(--navy);color:white;border:none;border-radius:8px;
+                    padding:6px 12px;font-size:0.78rem;font-weight:600;cursor:pointer;
+                    font-family:'DM Sans',sans-serif;white-space:nowrap;">
+                    ✏️ Edit
+                  </button>
+                  <button
+                    onclick="deleteTimeEntry('${l.id}')"
+                    style="background:var(--light);color:var(--red);border:1px solid var(--border);
+                    border-radius:8px;padding:6px 8px;font-size:0.78rem;cursor:pointer;">
+                    🗑
+                  </button>
+                </div>
+              </div>`).join('')}
+            <div style="display:flex;justify-content:flex-end;padding:8px 6px 4px;">
+              <button onclick="showAddTimeModalFor('${name}')"
+                style="background:var(--green);color:white;border:none;border-radius:8px;
+                padding:6px 14px;font-size:0.78rem;font-weight:600;cursor:pointer;
+                font-family:'DM Sans',sans-serif;">
+                ➕ Add Shift
+              </button>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+}
+
+// Open add time modal pre-filled for a specific employee
+function showAddTimeModalFor(employeeName) {
+  showAddTimeModal();
+  // Pre-select the employee after modal renders
+  setTimeout(()=>{
+    const sel = document.getElementById('editLogName');
+    if(sel){
+      for(let i=0;i<sel.options.length;i++){
+        if(sel.options[i].value===employeeName){
+          sel.selectedIndex=i; break;
+        }
+      }
+    }
+  }, 50);
 }
 
 // ══════════════════════════════════════════
