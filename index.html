@@ -280,16 +280,44 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:#1a1a2e;min-
     <!-- Manager all logs -->
     <!-- Weekly hours summary -->
     <div class="admin-only" style="margin-top:1.2rem;margin-bottom:1.2rem;">
-      <div class="section-title">📊 Weekly Hours by Employee</div>
+      <div class="section-title">
+        📊 Weekly Hours by Employee
+      </div>
+      <!-- Week navigation -->
+      <div style="display:flex;align-items:center;justify-content:space-between;
+        background:white;border-radius:12px;padding:10px 14px;margin-bottom:12px;
+        border:1px solid var(--border);box-shadow:var(--shadow);">
+        <button onclick="changeWeek(-1)"
+          style="background:var(--light);border:none;border-radius:8px;
+          padding:8px 14px;cursor:pointer;font-size:0.85rem;font-weight:700;
+          color:var(--navy);font-family:'DM Sans',sans-serif;">
+          ‹ Prev
+        </button>
+        <div style="text-align:center;">
+          <div id="weekRangeLabel" style="font-weight:700;font-size:0.88rem;color:var(--navy);"></div>
+          <div id="weekOffsetLabel" style="font-size:0.72rem;color:var(--gray);margin-top:2px;"></div>
+        </div>
+        <button onclick="changeWeek(1)" id="weekNextBtn"
+          style="background:var(--light);border:none;border-radius:8px;
+          padding:8px 14px;cursor:pointer;font-size:0.85rem;font-weight:700;
+          color:var(--navy);font-family:'DM Sans',sans-serif;">
+          Next ›
+        </button>
+      </div>
       <div id="weeklyHoursContainer"></div>
     </div>
 
     <div class="admin-only" style="margin-top:1.2rem;">
       <div class="section-title">📋 All Time Logs
-        <span style="display:flex;gap:6px;align-items:center;">
-          <input type="date" id="logFilterDate" class="form-input" style="max-width:140px;padding:6px 10px;font-size:0.8rem;" onchange="renderAllLogs()">
-          <button onclick="document.getElementById('logFilterDate').value='';renderAllLogs();" style="background:var(--light);border:none;border-radius:8px;padding:6px 10px;font-size:0.78rem;cursor:pointer;">All</button>
-          <button onclick="showAddTimeModal()" style="background:var(--green);color:white;border:none;border-radius:8px;padding:6px 10px;font-size:0.78rem;cursor:pointer;font-weight:600;">➕</button>
+        <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <input type="date" id="logFilterDate" class="form-input"
+            style="max-width:140px;padding:6px 10px;font-size:0.8rem;" onchange="renderAllLogs()">
+          <button onclick="document.getElementById('logFilterDate').value='';renderAllLogs();"
+            style="background:var(--light);border:none;border-radius:8px;padding:6px 10px;
+            font-size:0.78rem;cursor:pointer;color:var(--gray);">All Dates</button>
+          <button onclick="showAddTimeModal()"
+            style="background:var(--green);color:white;border:none;border-radius:8px;
+            padding:6px 10px;font-size:0.78rem;cursor:pointer;font-weight:600;">➕ Add</button>
         </span>
       </div>
       <div id="allLogsContainer"></div>
@@ -803,7 +831,7 @@ function renderAllLogs() {
   const container = document.getElementById('allLogsContainer');
   if(!container) return;
   const filterEl = document.getElementById('logFilterDate');
-  if(filterEl && !filterEl.value) filterEl.value = new Date().toISOString().split('T')[0];
+  // Don't pre-fill date - show all by default, let manager filter if needed
   const filterDate = filterEl ? filterEl.value : '';
   let logs = getTimeLogs();
   if(filterDate) logs = logs.filter(l=>l.date===filterDate);
@@ -1671,22 +1699,43 @@ function closeEditJobModal() {
 // ══════════════════════════════════════════
 // WEEKLY HOURS BY EMPLOYEE
 // ══════════════════════════════════════════
-function getWeekRange() {
+// weekOffset: 0=this week, -1=last week, -2=two weeks ago, etc.
+function getWeekRange(weekOffset) {
+  const offset = weekOffset || 0;
   const today = new Date();
-  const start = new Date(today); start.setDate(today.getDate()-today.getDay());
-  const end = new Date(today); end.setDate(today.getDate()+(6-today.getDay()));
+  const start = new Date(today);
+  start.setDate(today.getDate() - today.getDay() + (offset * 7));
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
   return {
     start: start.toISOString().split('T')[0],
     end: end.toISOString().split('T')[0]
   };
 }
 
+// Current week offset state
+let currentWeekOffset = 0;
+
 function renderWeeklyHours() {
   const container = document.getElementById('weeklyHoursContainer');
   if(!container) return;
-  const {start,end} = getWeekRange();
-  // Show ALL logs this week, including ones without clock-out
+  const {start,end} = getWeekRange(currentWeekOffset);
+  // Show ALL logs for selected week, including ones without clock-out
   const logs = getTimeLogs().filter(l=>l.date>=start&&l.date<=end);
+
+  // Update week label
+  const labelEl = document.getElementById('weekRangeLabel');
+  const offsetEl = document.getElementById('weekOffsetLabel');
+  const nextBtn = document.getElementById('weekNextBtn');
+  if(labelEl) labelEl.textContent = formatDate(start) + ' — ' + formatDate(end);
+  if(offsetEl){
+    if(currentWeekOffset===0) offsetEl.textContent = 'This Week';
+    else if(currentWeekOffset===-1) offsetEl.textContent = 'Last Week';
+    else offsetEl.textContent = Math.abs(currentWeekOffset)+' weeks ago';
+  }
+  // Disable next button if we are already on current week
+  if(nextBtn) nextBtn.disabled = currentWeekOffset >= 0;
+  if(nextBtn) nextBtn.style.opacity = currentWeekOffset >= 0 ? '0.3' : '1';
 
   if(!logs.length) {
     container.innerHTML='<p style="color:var(--gray);font-size:0.82rem;text-align:center;padding:1rem;">No time logged this week.</p>';
@@ -1792,6 +1841,14 @@ function renderWeeklyHours() {
           </div>
         </div>`;
     }).join('');
+}
+
+// Change week in weekly hours view
+function changeWeek(dir) {
+  const newOffset = currentWeekOffset + dir;
+  if(newOffset > 0) return; // can't go into future
+  currentWeekOffset = newOffset;
+  renderWeeklyHours();
 }
 
 // Open add time modal pre-filled for a specific employee
